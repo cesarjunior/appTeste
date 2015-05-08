@@ -1,138 +1,180 @@
-/*
- * David Rust-Smith & Nick Breen - August 2013
- *
- * Apache 2.0
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied. 
- */
+var db;
 var app = {
-	SERVER_URL : "http://artengine.ca/nnrbeacons/submit.php",
-	HIGH_GPS_ACCURACY : false,	// some emulators require true.
+    init: function () {
+        clientes.init();
+        //produtos.init();
+        //pedidos.init();
+        app.openDatabase();
+        db.transaction(function (tx) {
+            //CREATE TABLE IF NOT EXISTS clientes (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, nome VARCHAR(100) NOT NULL, documento VARCHAR(20), telefone VARCHAR(15), endereco VARCHAR(50), bairro VARCHAR(50), cidade VARCHAR(50), estado VARCHAR(50), cep VARCHAR(10), observacao TEXT)
+            //CREATE TABLE IF NOT EXISTS produtos (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, produto TEXT NOT NULL, valor_venda REAL NOT NULL, estoque INTEGER, observacao TEXT)
+            //CREATE TABLE IF NOT EXISTS pedidos (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, fk_id_cliente INTEGER NOT NULL, desconto REAL, valor_total REAL, entregue INTEGER, observacao TEXT)
+            //CREATE TABLE IF NOT EXISTS pedidos_itens (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, fk_id_pedido INTEGER NOT NULL, fk_id_produto INTEGER NOT NULL, valor_unitario REAL, qnt INTEGER, valor_total REAL)
+            tx.executeSql("CREATE TABLE IF NOT EXISTS clientes (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, documento TEXT, telefone TEXT, endereco TEXT, bairro TEXT, cidade TEXT, estado TEXT, cep TEXT, observacao TEXT)", []);
+            tx.executeSql("CREATE TABLE IF NOT EXISTS produtos (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, produto TEXT NOT NULL, valor_venda REAL NOT NULL, estoque INTEGER, observacao TEXT)", []);
+            tx.executeSql("CREATE TABLE IF NOT EXISTS pedidos (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, fk_id_cliente INTEGER NOT NULL, desconto REAL, valor_total REAL, entregue INTEGER, observacao TEXT)", []);
+            tx.executeSql("CREATE TABLE IF NOT EXISTS pedidos_itens (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, fk_id_pedido INTEGER NOT NULL, fk_id_produto INTEGER NOT NULL, valor_unitario REAL, quantidade INTEGER, valor_total REAL)", []);
+            //tx.executeSql("DROP TABLE clientes");
+            //tx.executeSql("DROP TABLE produtos");
+            //tx.executeSql("DROP TABLE pedidos");
+            //tx.executeSql("DROP TABLE pedidos_itens");
+        }, app.transactionError);
+    },
+    openLoader: function () {
+        options = {
+            text: "Carregando",
+            textVisible: true,
+            theme: "z",
+            html: ""
+        }
 
-	position : null,
-	deviceId : 0,
-	passcode : 0,
-	timeLastSubmit : 0,
-	forcedSubmit : false, // set if user explicitly presses submit button.
-							// Used to determine if we show alert boxes.
+        $.mobile.loading("show", options);
+        return this;
+    },
+    closeLoader: function () {
+        $.mobile.loading("hide");
+        return this;
+    },
+    closeSlider: function () {
+        $('#panel_slider').panel('close');
+        return this;
+    },
+    openDatabase: function () {
+        db = window.openDatabase("dbApp", "1.0", "Teste de dataBase", 200000);
+    },
+    transactionError: function (error) {
+        console.log('Aqui msm');
+        alert('Msg de erro: ' + error.message + ', C�digo: ' + error.code);
+    },
+    getRegisters: function (method, params, callback) {
+        // method Necess�rio ser Objeto referente aos dados que esta sendo trabalhado
+        // params � esperado STRING para passar a SQL completa ou Objeto esperando columns, where e order como itens
+        // item columns do params pode ser esperado string ou array assim como where e order � esperado apenas string
 
-	// Application Constructor
-	initialize : function() {
-		this.bindEvents();
-		this.initFastClick();
-		this.initUserId();
-		this.initPasscode();
-		this.initView();
-		app.timeLastSubmit = (new Date().getTime() / 1000) - 60; 
-	},
-	bindEvents : function() {
-		document.addEventListener('deviceready', this.onDeviceReady, false);
-	},
-	onDeviceReady : function() {
-		navigator.splashscreen.hide();
-		app.checkConnection();
-		gps.init();
-	},
-	initFastClick : function() {
-		window.addEventListener('load', function() {
-			FastClick.attach(document.body);
-		}, false);
-	},
-	initUserId : function() {
-		var permanentStorage = window.localStorage;
-		this.deviceId = permanentStorage.getItem("deviceId");
-		if (this.deviceId === null) {
-			permanentStorage.setItem("deviceId", Math
-					.floor((Math.random() * 100000)));
-			this.deviceId = permanentStorage.getItem("deviceId");
-		}
-	},
-	initPasscode : function() {
-		var permanentStorage = window.localStorage;
-		this.passcode = permanentStorage.getItem("passcode");
-		var passcodeText = '';
-		if (this.passcode === null) {
-			passcodeText = '';
-		} else {
-			passcodeText = this.passcode;
-		}
-		$('#userPasscode').val(passcodeText);
-	},
-	initView : function() {
-		if (this.passcode === null) {
-			$('#settingsPage #enterPasswordInstruction').show();
-			$('#statusPage').hide();
-			$('#settingsPage').show();
-		}
-	},
-	checkConnection : function() {
-		var networkState = navigator.connection.type;
+        returnArray = [];
+        try {
+            if (typeof method != 'object') {
+                throw 'Parametro method dentro do getRegister n�o � Objeto.';
+            }
+            if (typeof params != 'string' && typeof params != 'object') {
+                throw 'Parametro params dentro do getRegisters inesperado.';
+            } else {
+                if (typeof params == 'string' && params.length < 17) {
+                    throw 'Parametro params contendo SQL inesperado.';
+                }
+            }
+            //
+            // Inicio da Rotina para montagem da SQL
+            //
+            sql = '';
+            if (typeof params == 'string') {
+                sql = params;
+            } else {
+                sql = 'SELECT ';
+                if (typeof params.columns == 'string') {
+                    sql = sql + params.cloumns;
+                } else if (typeof params.columns == 'array') {
+                    sql = sql + params.columns.toString();
+                } else {
+                    sql = sql + '*';
+                }
 
-		var states = {};
-		states[Connection.UNKNOWN] = 'Unknown';
-		states[Connection.ETHERNET] = 'Ethernet';
-		states[Connection.WIFI] = 'WiFi';
-		states[Connection.CELL_2G] = 'Cell 2G';
-		states[Connection.CELL_3G] = 'Cell 3G';
-		states[Connection.CELL_4G] = 'Cell 4G';
-		states[Connection.CELL] = 'Cell';
-		states[Connection.NONE] = 'No';
+                if (sql.length == 0) {
+                    throw 'SQL montada de forma errada dendo do getRegisters';
+                }
+                sql = sql + ' FROM ' + method.table;
+                if (typeof params.where == 'string') {
+                    sql = sql + ' WHERE ' + params.where;
+                } else if (typeof params.where == 'array') {
+                    sql = sql + ' WHERE ' + params.where.toString();
+                }
+                if (typeof params.order == 'string') {
+                    sql = sql + ' ORDER BY ' + params.order;
+                }
+            }
 
-		elem = $('#connectionInfo');
-		if (networkState == Connection.NONE) {
-			this.failElement(elem);
-		} else {
-			this.succeedElement(elem);
-		}
-		elem.innerHTML = 'Internet: ' + states[networkState];
-	},
-	getReadableTime : function(time) {
-		var hours = time.getHours();
-		var ampm = hours >= 12 ? 'pm' : 'am';
-		hours = hours % 12;
-		hours = hours ? hours : 12;
+            //
+            // FIM da rotina de montagem da SQL
+            //
+            db.transaction(function (tx) {
+                tx.executeSql(sql, [], function (text, result) {
+                    for (var i = 0; i < result.rows.length; i++) {
+                        returnArray[i] = result.rows.item(i);
+                    }
 
-		return (hours + ':' + app.padZero(time.getMinutes()) + ':'
-				+ app.padZero(time.getSeconds()) + ' ' + ampm);
-	},
-	padZero : function(num) {
-		return (num < 10 ? '0' + num : num);
-	},
-	succeedElement : function(elem) {
-		elem.removeClass("fail");
-		elem.addClass("success");
-	},
-	failElement : function(elem) {
-		elem.removeClass("success");
-		elem.addClass("fail");
-	}
-};
-$(function() {
-	$("#userPasscode").focusout(
-			function() {
-				var permanentStorage = window.localStorage;
-				permanentStorage.setItem("passcode", $("#userPasscode").val());
-				this.passcode = $("#userPasscode").val();
-				if ($("#userPasscode").val() !== ""
-						&& $('#settingsPage #enterPasswordInstruction').is(
-								":visible")) {
-					$('#settingsPage #enterPasswordInstruction').hide();
-				}
-			});
-
-	$("#submit-passcode").click(function() {
-		app.forcedSubmit = true; // forces pop-up
-		app.submitToServer();
-	});
-
-	$(document).delegate('.ui-navbar a', 'click', function() {
-		$(this).addClass('ui-btn-active');
-		$('.content_div').hide();
-		$('#' + $(this).attr('data-href')).show();
-	});
-
-});
+                    if (typeof callback == 'function') {
+                        callback(returnArray);
+                    }
+                    return returnArray;
+                });
+            }, app.transactionError);
+        } catch (error) {
+            alert('Error: ' + error);
+        }
+    },
+    saveRegister: function (method, params, callback) {
+        try {
+            if (typeof params != 'object') {
+                throw 'Parametro params dentro do saveRegister inesperado';
+            }
+            if (typeof method != 'object') {
+                throw 'Parametro method dentro do saveRegister inesperado';
+            }
+            db.transaction(function (tx) {
+                positionID = params.values.length;
+                positionID = positionID - 1;
+                id = params.values[positionID];
+                params.values.splice(positionID);
+                params.columns.splice(positionID);
+                if (id == '') {
+                    value = [];
+                    for (var i = 0; i < params.columns.length; i++) {
+                        value[i] = '?';
+                    }
+                    sql = "INSERT INTO " + method.table + " (" + params.columns.toString() + ") VALUES (" + value.toString() + ")";
+                } else {
+                    set = [];
+                    for (var i = 0; i < params.columns.length; i++) {
+                        set[i] = params.columns[i] + ' = ?';
+                    }
+                    sql = "UPDATE " + method.table + " SET " + set.toString() + " WHERE id = " + id;
+                }
+                //alert(sql);
+                tx.executeSql(sql, params.values, function (text, result) {
+                    if (typeof callback == 'function') {
+                        if (id == '') {
+                            callback(result.insertId);
+                        } else {
+                            callback(id);
+                        }
+                    }
+                });
+            }, app.transactionError);
+        } catch (error) {
+            alert('Error: ' + error);
+        }
+        return;
+    },
+    deleteRegister: function (method, id, callback) {
+        try {
+            if (typeof method != 'object') {
+                throw 'Parametro method dentro do deleteRegister inesperado';
+            }
+            if (id == '') {
+                throw 'Parametro id dentro do deleteRegister vazio.';
+            }
+            db.transaction(function (tx) {
+                var sql = "DELETE FROM " + method.table + " WHERE id = ?";
+                tx.executeSql(sql, [id], function (text, result) {
+                    if (typeof callback == 'function') {
+                        callback();
+                        alert('Item removido com sucesso.');
+                    }
+                });
+            }, app.transactionError);
+            return;
+        } catch (error) {
+            alert('Error: ' + error);
+        }
+    }
+}
